@@ -1,0 +1,50 @@
+h1. bind-http-json
+
+An experiment with Bind. For each lookup, bind makes a HTTP GET on a webserver which answers a bit of json.
+With this backend, you are free in your choice of database. You don't have to change bind code, just write a little webserver.
+
+bc.. require 'rubygems'
+require 'sinatra'
+
+db = {
+  "www" => "192.168.0.105",
+  "ns1" => "192.168.0.55",
+  "ns2" => "192.168.0.54"
+}
+
+get '/example.com/lookup' do
+  content_type "application/json"
+  
+  name = params["name"]
+  return '{}' unless db.has_key?(name)
+  '{"type" : "A", "field" : "' + db[name] + '"}'
+end
+
+p. and in named.conf,
+
+bc.. controls { /* empty */ };
+
+options {
+	directory "/var/cache/bind";
+
+	allow-transfer { any; };
+	// auth-nxdomain no;
+	listen-on-v6 { any; };
+};
+
+zone "example.com" {
+	type master;
+	database "remote http://127.0.0.1:4567";
+};
+
+p. Easy? When I do 
+
+bc. nslookup www.example.com
+
+Bind asks my webserver 
+
+bc. GET /[zone name]/lookup?name=[subdomain]
+
+Sinatra answers 
+
+bc. {"type" : "A", "field", "192.168.0.105"}
