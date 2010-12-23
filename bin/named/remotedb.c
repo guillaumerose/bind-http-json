@@ -2,6 +2,10 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
+
+#include <json/json.h>
+#include <curl/curl.h>
 
 #include <isc/mem.h>
 #include <isc/print.h>
@@ -18,24 +22,124 @@ typedef struct _dbinfo {
 	char *url;
 } dbinfo_t;
 
+struct remotedb_answer {
+	int valid;
+	const char *type;
+	const char *field;
+};
+
+static struct remotedb_answer *
+remotedb_answer_init() 
+{
+	struct remotedb_answer *ans;
+	ans = malloc(sizeof(struct remotedb_answer));
+	ans->valid = 0;
+	ans->type = NULL;
+	ans->field = NULL;
+	return ans;
+}
+
+static void
+remotedb_answer_cleanup(struct remotedb_answer *ans) 
+{
+	free(ans);
+}
+
 static dns_sdbimplementation_t *remotedb = NULL;
 
-static isc_result_t
-remotedb_lookup(const char *zone, const char *name, void *dbdata,
-	      dns_sdblookup_t *lookup)
+static void remotedb_curl(char *ptr, size_t size, size_t nmemb, struct remotedb_answer *ans)
 {
-	UNUSED(zone);
+	UNUSED(size);
+	UNUSED(nmemb);
+	
+	struct json_object *rep, *type, *field;
+	rep = json_tokener_parse(ptr);
+	
+	if ((int) rep < 0)
+		return;
+
+	type = json_object_object_get(rep, "type");
+	field = json_object_object_get(rep, "field");
+	
+	if (type != NULL && field != NULL) {
+		ans->type = json_object_get_string(type);
+		ans->field = json_object_get_string(field);
+		ans->valid = 1;
+	}
+}
+ 
+static isc_result_t
+remotedb_lookup(const char *zone, const char *name, void *dbdata, dns_sdblookup_t *lookup)
+{
+	dbinfo_t *dbi = (dbinfo_t *) dbdata;
+	
+	isc_result_t result;
+
 	UNUSED(dbdata);
 
-	return (ISC_R_FAILURE);
+	if (strcmp(name, "@") == 0)
+		return (ISC_R_SUCCESS);
+	
+	char request[1024] = "";
+	sprintf(request, "%s/%s/lookup?name=%s", dbi->url, zone, name);
+
+	struct remotedb_answer *ans = remotedb_answer_init();
+	
+	CURL *curl;
+	CURLcode res;
+	
+	curl = curl_easy_init();
+	if(curl) {
+		curl_easy_setopt(curl, CURLOPT_URL, request);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, ans);
+		
+		res = curl_easy_perform(curl);
+		curl_easy_cleanup(curl);
+	}
+	
+	if (ans->valid != 1) {
+		remotedb_answer_cleanup(ans);
+		return (ISC_R_NOTFOUND);
+	}
+		
+	result = dns_sdb_putrr(lookup, ans->type, 86400, ans->field);
+	remotedb_answer_cleanup(ans);
+
+	if (result != ISC_R_SUCCESS)
+		return (ISC_R_FAILURE);
+
+	return (ISC_R_SUCCESS);
 }
 
 static isc_result_t
-remotedb_authority(const char *zone, void *dbdata, dns_sdblookup_t *lookup) {
+remotedb_authority(const char *zone, void *dbdata, dns_sdblookup_t *lookup) 
+{
+	isc_result_t result;
+
 	UNUSED(zone);
 	UNUSED(dbdata);
 
-	return (ISC_R_FAILURE);
+	time_t rawtime;
+	time(&rawtime);
+	
+	struct tm *timeinfo = localtime(&rawtime);
+	
+	char buffer[11];
+	strftime(buffer, 11, "%Y%m%d01", timeinfo);
+
+	result = dns_sdb_putsoa(lookup, "ns1.example.com.", "dns.example.com.", atoi(buffer)); // YYYYMMDDXX
+	if (result != ISC_R_SUCCESS)
+		return (ISC_R_FAILURE);
+
+	result = dns_sdb_putrr(lookup, "NS", 86400, "ns1.example.com.");
+	if (result != ISC_R_SUCCESS)
+		return (ISC_R_FAILURE);
+	result = dns_sdb_putrr(lookup, "NS", 86400, "ns2.example.com.");
+	if (result != ISC_R_SUCCESS)
+		return (ISC_R_FAILURE);
+
+	return (ISC_R_SUCCESS);
 }
 
 #define STRDUP_OR_FAIL(target, source)				\
@@ -48,9 +152,7 @@ remotedb_authority(const char *zone, void *dbdata, dns_sdblookup_t *lookup) {
 	} while (0);
 
 static isc_result_t
-remotedb_create(const char *zone,
-		int argc, char **argv,
-		void *driverdata, void **dbdata)
+remotedb_create(const char *zone, int argc, char **argv, void *driverdata, void **dbdata)
 {
 	dbinfo_t *dbi;
 	isc_result_t result;
@@ -85,7 +187,8 @@ static dns_sdbmethods_t remotedb_methods = {
 };
 
 isc_result_t
-remotedb_init(void) {
+remotedb_init(void) 
+{
 	unsigned int flags;
 	flags = DNS_SDBFLAG_RELATIVEOWNER | DNS_SDBFLAG_RELATIVERDATA;
 	return (dns_sdb_register("remote", &remotedb_methods, NULL, flags,
@@ -93,7 +196,8 @@ remotedb_init(void) {
 }
 
 void
-remotedb_clear(void) {
+remotedb_clear(void) 
+{
 	if (remotedb != NULL)
 		dns_sdb_unregister(&remotedb);
 }
