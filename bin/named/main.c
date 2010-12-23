@@ -73,7 +73,7 @@
 /*
  * Include header files for database drivers here.
  */
-/* #include "xxdb.h" */
+#include "remotedb.h"
 
 /*
  * Include DLZ drivers if appropriate.
@@ -842,6 +842,8 @@ setup(void) {
 	 */
 	/* xxdb_init(); */
 
+	remotedb_init();
+
 #ifdef DLZ
 	/*
 	 * Register any DLZ drivers.
@@ -867,6 +869,7 @@ cleanup(void) {
 	 * Add calls to unregister sdb drivers here.
 	 */
 	/* xxdb_clear(); */
+	remotedb_clear();
 
 #ifdef DLZ
 	/*
