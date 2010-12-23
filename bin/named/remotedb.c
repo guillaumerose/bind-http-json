@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <isc/mem.h>
 #include <isc/print.h>
 #include <isc/result.h>
 #include <isc/util.h>
@@ -12,6 +13,10 @@
 #include <named/globals.h>
 
 #include "remotedb.h"
+
+typedef struct _dbinfo {
+	char *url;
+} dbinfo_t;
 
 static dns_sdbimplementation_t *remotedb = NULL;
 
@@ -33,12 +38,50 @@ remotedb_authority(const char *zone, void *dbdata, dns_sdblookup_t *lookup) {
 	return (ISC_R_FAILURE);
 }
 
+#define STRDUP_OR_FAIL(target, source)				\
+	do {							\
+		target = isc_mem_strdup(ns_g_mctx, source);	\
+		if (target == NULL) {				\
+			result = ISC_R_NOMEMORY;		\
+			goto cleanup;				\
+		}						\
+	} while (0);
+
+static isc_result_t
+remotedb_create(const char *zone,
+		int argc, char **argv,
+		void *driverdata, void **dbdata)
+{
+	dbinfo_t *dbi;
+	isc_result_t result;
+
+	UNUSED(zone);
+	UNUSED(driverdata);
+
+	if (argc < 1)
+		return (ISC_R_FAILURE);
+
+	dbi = isc_mem_get(ns_g_mctx, sizeof(dbinfo_t));
+	if (dbi == NULL)
+		return (ISC_R_NOMEMORY);
+
+	dbi->url = NULL;
+	STRDUP_OR_FAIL(dbi->url, argv[0]);
+	
+	*dbdata = dbi;
+
+	return (ISC_R_SUCCESS);
+
+cleanup:
+	return (result);
+}
+
 static dns_sdbmethods_t remotedb_methods = {
 	remotedb_lookup,
 	remotedb_authority,
-	NULL,	/* allnodes */
-	NULL,	/* create */
-	NULL	/* destroy */
+	NULL,
+	remotedb_create,
+	NULL
 };
 
 isc_result_t
