@@ -26,26 +26,26 @@ end
 get '/example.com/authority' do
   content_type "application/json"
   
-	'{
-		  "data" : [
-		      {
-		          "type" : "SOA",
-		          "field" : [
-		              "ns1.example.com.",
-		              "dns.example.com.",
-		              2010122701
-		          ]
-		      },
-		      {
-		          "type" : "NS",
-		          "field" : "ns1.example.com."
-		      },
-		      {
-		          "type" : "NS",
-		          "field" : "ns2.example.com."
-		      }
-		  ]
-	}'
+  '{
+      "data" : [
+          {
+              "type" : "SOA",
+              "field" : [
+                  "ns1.example.com.",
+                  "dns.example.com.",
+                  2010122701
+              ]
+          },
+          {
+              "type" : "NS",
+              "field" : "ns1.example.com."
+          },
+          {
+              "type" : "NS",
+              "field" : "ns2.example.com."
+          }
+      ]
+  }'
 end
 
 p. and in named.conf,
@@ -53,16 +53,16 @@ p. and in named.conf,
 bc.. controls { /* empty */ };
 
 options {
-	directory "/var/cache/bind";
+  directory "/var/cache/bind";
 
-	allow-transfer { any; };
-	// auth-nxdomain no;
-	listen-on-v6 { any; };
+  allow-transfer { any; };
+  // auth-nxdomain no;
+  listen-on-v6 { any; };
 };
 
 zone "example.com" {
-	type master;
-	database "remote http://127.0.0.1:4567";
+  type master;
+  database "remote http://127.0.0.1:4567";
 };
 
 p. Easy? When I do 
