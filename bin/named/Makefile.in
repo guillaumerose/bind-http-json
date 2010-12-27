@@ -30,7 +30,7 @@ top_srcdir =	@top_srcdir@
 #
 DBDRIVER_OBJS = remotedb.@O@
 DBDRIVER_SRCS = remotedb.c
-DBDRIVER_INCLUDES =
+DBDRIVER_INCLUDES =--std=c99
 DBDRIVER_LIBS =-ljson -lcurl
 
 DLZ_DRIVER_DIR =	${top_srcdir}/contrib/dlz/drivers

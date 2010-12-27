@@ -22,49 +22,108 @@ typedef struct _dbinfo {
 	char *url;
 } dbinfo_t;
 
-struct remotedb_answer {
-	int valid;
-	const char *type;
-	const char *field;
-};
-
-static struct remotedb_answer *
-remotedb_answer_init() 
-{
-	struct remotedb_answer *ans;
-	ans = malloc(sizeof(struct remotedb_answer));
-	ans->valid = 0;
-	ans->type = NULL;
-	ans->field = NULL;
-	return ans;
-}
-
-static void
-remotedb_answer_cleanup(struct remotedb_answer *ans) 
-{
-	free(ans);
-}
-
 static dns_sdbimplementation_t *remotedb = NULL;
 
-static void remotedb_curl(char *ptr, size_t size, size_t nmemb, struct remotedb_answer *ans)
+static void 
+remotedb_fill_soa(dns_sdblookup_t *lookup, json_object *jobj) 
+{
+	if (json_type_array != json_object_get_type(jobj)) {
+		// printf("Wrong type in SOA field\n");
+		return;
+	}
+	
+	if (json_object_array_length(jobj) != 3) {
+		// printf("Wrong format (SOA requires 3 fields)\n");
+		return;
+	}
+	
+	struct json_object *jmname 	= json_object_array_get_idx(jobj, 0);
+	struct json_object *jname 	= json_object_array_get_idx(jobj, 1);
+	struct json_object *jserial	= json_object_array_get_idx(jobj, 2);
+	
+	const char *mname = json_object_get_string(jmname);
+	const char *name = json_object_get_string(jname);
+	int serial = json_object_get_int(jserial);
+	
+	dns_sdb_putsoa(lookup, mname, name, serial);
+	// printf("type = %s, name = %s, serial = %d\n", mname, name, serial);
+}
+
+static void 
+remotedb_fill_generic(dns_sdblookup_t *lookup, const char *type, json_object *jobj) 
+{
+	if (json_type_string != json_object_get_type(jobj)) {
+		// printf("Wrong type in generic field\n");
+		return;
+	}
+	
+	dns_sdb_putrr(lookup, type, 86400, json_object_get_string(jobj));	
+	// printf("type = %s, field = %s\n", type, json_object_get_string(jobj));
+}
+
+static void 
+remotedb_routing(dns_sdblookup_t *lookup, json_object *jobj) 
+{
+	struct json_object *jtype, *jfield;
+	
+	if (json_object_get_type(jobj) != json_type_object) {
+		// printf("Wrong type in field\n");
+		return;
+	}
+	
+	if ((jtype = json_object_object_get(jobj, "type")) == NULL
+		|| (jfield = json_object_object_get(jobj, "field")) == NULL)
+		return;
+	
+	const char *type = json_object_get_string(jtype);
+	
+	if (strcmp(type, "SOA") == 0) 
+		remotedb_fill_soa(lookup, jfield);
+	else
+		remotedb_fill_generic(lookup, type, jfield);
+	
+}
+
+static void 
+remotedb_curl(char *ptr, size_t size, size_t nmemb, dns_sdblookup_t *lookup)
 {
 	UNUSED(size);
 	UNUSED(nmemb);
 	
-	struct json_object *rep, *type, *field;
-	rep = json_tokener_parse(ptr);
+	json_object * jobj = json_tokener_parse(ptr);
 	
-	if ((int) rep < 0)
+	if ((int) jobj < 0) {
+		// printf("Invalid json\n");
 		return;
-
-	type = json_object_object_get(rep, "type");
-	field = json_object_object_get(rep, "field");
+	}
 	
-	if (type != NULL && field != NULL) {
-		ans->type = json_object_get_string(type);
-		ans->field = json_object_get_string(field);
-		ans->valid = 1;
+	if (json_object_object_get(jobj, "data") == NULL) {
+		// printf("Simple call\n");
+		remotedb_routing(lookup, jobj);
+	}
+		
+	enum json_type type;
+	
+	json_object_object_foreach(jobj, key, val) {
+		type = json_object_get_type(val);
+		switch (type) {
+			case json_type_array: 
+				if (strcmp("data", key) != 0) {
+					// printf("Only route with data as key\n");
+				} 
+
+				int arraylen = json_object_array_length(val);
+				
+				int i;
+				json_object * jvalue;
+				for (i = 0; i < arraylen; i++){
+					jvalue = json_object_array_get_idx(val, i);
+					remotedb_routing(lookup, jvalue);
+				}
+				break;
+			default: 
+				break;
+		}
 	}
 }
  
@@ -73,18 +132,15 @@ remotedb_lookup(const char *zone, const char *name, void *dbdata, dns_sdblookup_
 {
 	dbinfo_t *dbi = (dbinfo_t *) dbdata;
 	
-	isc_result_t result;
-
 	UNUSED(dbdata);
 
+	// We do not handle $ORIGIN
 	if (strcmp(name, "@") == 0)
 		return (ISC_R_SUCCESS);
 	
 	char request[1024] = "";
 	sprintf(request, "%s/%s/lookup?name=%s", dbi->url, zone, name);
 
-	struct remotedb_answer *ans = remotedb_answer_init();
-	
 	CURL *curl;
 	CURLcode res;
 	
@@ -92,22 +148,11 @@ remotedb_lookup(const char *zone, const char *name, void *dbdata, dns_sdblookup_
 	if(curl) {
 		curl_easy_setopt(curl, CURLOPT_URL, request);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, ans);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, lookup);
 		
 		res = curl_easy_perform(curl);
 		curl_easy_cleanup(curl);
 	}
-	
-	if (ans->valid != 1) {
-		remotedb_answer_cleanup(ans);
-		return (ISC_R_NOTFOUND);
-	}
-		
-	result = dns_sdb_putrr(lookup, ans->type, 86400, ans->field);
-	remotedb_answer_cleanup(ans);
-
-	if (result != ISC_R_SUCCESS)
-		return (ISC_R_FAILURE);
 
 	return (ISC_R_SUCCESS);
 }
@@ -115,29 +160,26 @@ remotedb_lookup(const char *zone, const char *name, void *dbdata, dns_sdblookup_
 static isc_result_t
 remotedb_authority(const char *zone, void *dbdata, dns_sdblookup_t *lookup) 
 {
-	isc_result_t result;
+	dbinfo_t *dbi = (dbinfo_t *) dbdata;
 
 	UNUSED(zone);
 	UNUSED(dbdata);
 
-	time_t rawtime;
-	time(&rawtime);
-	
-	struct tm *timeinfo = localtime(&rawtime);
-	
-	char buffer[11];
-	strftime(buffer, 11, "%Y%m%d01", timeinfo);
+	char request[1024] = "";
+	sprintf(request, "%s/%s/authority", dbi->url, zone);
 
-	result = dns_sdb_putsoa(lookup, "ns1.example.com.", "dns.example.com.", atoi(buffer)); // YYYYMMDDXX
-	if (result != ISC_R_SUCCESS)
-		return (ISC_R_FAILURE);
-
-	result = dns_sdb_putrr(lookup, "NS", 86400, "ns1.example.com.");
-	if (result != ISC_R_SUCCESS)
-		return (ISC_R_FAILURE);
-	result = dns_sdb_putrr(lookup, "NS", 86400, "ns2.example.com.");
-	if (result != ISC_R_SUCCESS)
-		return (ISC_R_FAILURE);
+	CURL *curl;
+	CURLcode res;
+	
+	curl = curl_easy_init();
+	if(curl) {
+		curl_easy_setopt(curl, CURLOPT_URL, request);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, lookup);
+		
+		res = curl_easy_perform(curl);
+		curl_easy_cleanup(curl);
+	}
 
 	return (ISC_R_SUCCESS);
 }

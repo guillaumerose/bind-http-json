@@ -16,8 +16,36 @@ get '/example.com/lookup' do
   content_type "application/json"
   
   name = params["name"]
+  
+  return '{"type" : "NS", "field" : "ns1.example.com."}' if name == "@"
   return '{}' unless db.has_key?(name)
+  
   '{"type" : "A", "field" : "' + db[name] + '"}'
+end
+
+get '/example.com/authority' do
+  content_type "application/json"
+  
+	'{
+		  "data" : [
+		      {
+		          "type" : "SOA",
+		          "field" : [
+		              "ns1.example.com.",
+		              "dns.example.com.",
+		              2010122701
+		          ]
+		      },
+		      {
+		          "type" : "NS",
+		          "field" : "ns1.example.com."
+		      },
+		      {
+		          "type" : "NS",
+		          "field" : "ns2.example.com."
+		      }
+		  ]
+	}'
 end
 
 p. and in named.conf,
