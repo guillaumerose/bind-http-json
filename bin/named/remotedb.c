@@ -125,6 +125,8 @@ remotedb_curl(char *ptr, size_t size, size_t nmemb, dns_sdblookup_t *lookup)
 				break;
 		}
 	}
+	
+	json_object_put(jobj);
 }
  
 static isc_result_t
