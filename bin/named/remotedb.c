@@ -18,6 +18,8 @@
 
 #include "remotedb.h"
 
+#define REMOTEDB_TIMEOUT 1
+
 typedef struct _dbinfo {
 	char *url;
 } dbinfo_t;
@@ -84,17 +86,19 @@ remotedb_routing(dns_sdblookup_t *lookup, json_object *jobj)
 	
 }
 
-static void 
-remotedb_curl(char *ptr, size_t size, size_t nmemb, dns_sdblookup_t *lookup)
+static size_t 
+remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 {
 	UNUSED(size);
 	UNUSED(nmemb);
+	
+	dns_sdblookup_t *lookup = (dns_sdblookup_t *) userdata;
 	
 	json_object * jobj = json_tokener_parse(ptr);
 	
 	if ((int) jobj < 0) {
 		// printf("Invalid json\n");
-		return;
+		return nmemb * size;
 	}
 	
 	if (json_object_object_get(jobj, "data") == NULL) {
@@ -127,6 +131,8 @@ remotedb_curl(char *ptr, size_t size, size_t nmemb, dns_sdblookup_t *lookup)
 	}
 	
 	json_object_put(jobj);
+	
+	return nmemb * size;
 }
  
 static isc_result_t
@@ -144,7 +150,7 @@ remotedb_lookup(const char *zone, const char *name, void *dbdata, dns_sdblookup_
 	sprintf(request, "%s/%s/lookup?name=%s", dbi->url, zone, name);
 
 	CURL *curl;
-	CURLcode res;
+	CURLcode res = CURLE_FAILED_INIT;
 	
 	curl = curl_easy_init();
 	if(curl) {
@@ -152,10 +158,16 @@ remotedb_lookup(const char *zone, const char *name, void *dbdata, dns_sdblookup_
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, lookup);
 		
+		curl_easy_setopt(curl, CURLOPT_TIMEOUT, REMOTEDB_TIMEOUT);
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, REMOTEDB_TIMEOUT);
+		
 		res = curl_easy_perform(curl);
 		curl_easy_cleanup(curl);
 	}
 
+	if (res != CURLE_OK)
+		return (ISC_R_NOTFOUND);
+		
 	return (ISC_R_SUCCESS);
 }
 
@@ -171,17 +183,23 @@ remotedb_authority(const char *zone, void *dbdata, dns_sdblookup_t *lookup)
 	sprintf(request, "%s/%s/authority", dbi->url, zone);
 
 	CURL *curl;
-	CURLcode res;
+	CURLcode res = CURLE_FAILED_INIT;
 	
 	curl = curl_easy_init();
 	if(curl) {
 		curl_easy_setopt(curl, CURLOPT_URL, request);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, remotedb_curl);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, lookup);
-		
+			
+		curl_easy_setopt(curl, CURLOPT_TIMEOUT, REMOTEDB_TIMEOUT);
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, REMOTEDB_TIMEOUT);
+			
 		res = curl_easy_perform(curl);
 		curl_easy_cleanup(curl);
 	}
+	
+	if (res != CURLE_OK)
+		return (ISC_R_NOTFOUND);
 
 	return (ISC_R_SUCCESS);
 }
