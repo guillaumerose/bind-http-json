@@ -25,6 +25,15 @@ typedef struct _dbinfo {
 } dbinfo_t;
 
 static dns_sdbimplementation_t *remotedb = NULL;
+static int remotedb_disable = 0;
+
+static int
+get_timestamp()
+{
+	time_t timestamp;
+	time(&timestamp);
+	return (int) timestamp;
+}
 
 static void 
 remotedb_fill_soa(dns_sdblookup_t *lookup, json_object *jobj) 
@@ -138,6 +147,9 @@ remotedb_curl( void *ptr, size_t size, size_t nmemb, void *userdata)
 static isc_result_t
 remotedb_lookup(const char *zone, const char *name, void *dbdata, dns_sdblookup_t *lookup)
 {
+	if (remotedb_disable && get_timestamp() - remotedb_disable <= 30)
+		return (ISC_R_FAILURE);
+
 	dbinfo_t *dbi = (dbinfo_t *) dbdata;
 	
 	UNUSED(dbdata);
@@ -165,15 +177,20 @@ remotedb_lookup(const char *zone, const char *name, void *dbdata, dns_sdblookup_
 		curl_easy_cleanup(curl);
 	}
 
-	if (res != CURLE_OK)
+	if (res != CURLE_OK) {
+		remotedb_disable = get_timestamp();
 		return (ISC_R_NOTFOUND);
-		
+	}
+
 	return (ISC_R_SUCCESS);
 }
 
 static isc_result_t
 remotedb_authority(const char *zone, void *dbdata, dns_sdblookup_t *lookup) 
 {
+	if (remotedb_disable && get_timestamp() - remotedb_disable <= 30)
+		return (ISC_R_FAILURE);
+
 	dbinfo_t *dbi = (dbinfo_t *) dbdata;
 
 	UNUSED(zone);
@@ -198,8 +215,10 @@ remotedb_authority(const char *zone, void *dbdata, dns_sdblookup_t *lookup)
 		curl_easy_cleanup(curl);
 	}
 	
-	if (res != CURLE_OK)
+	if (res != CURLE_OK) {
+		remotedb_disable = get_timestamp();
 		return (ISC_R_NOTFOUND);
+	}
 
 	return (ISC_R_SUCCESS);
 }
