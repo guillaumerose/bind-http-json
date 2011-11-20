@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007-2010  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2007-2011  Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,7 +14,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: dnssec-keyfromlabel.c,v 1.29.8.2 2010/01/19 23:48:12 tbox Exp $ */
+/* $Id: dnssec-keyfromlabel.c,v 1.32.14.2 2011-03-12 04:59:14 tbox Exp $ */
 
 /*! \file */
 
@@ -55,7 +55,7 @@ int verbose;
 
 static const char *algs = "RSA | RSAMD5 | DH | DSA | RSASHA1 |"
 			  " NSEC3DSA | NSEC3RSASHA1 |"
-			  " RSASHA256 | RSASHA512";
+			  " RSASHA256 | RSASHA512 | ECCGOST";
 
 ISC_PLATFORM_NORETURN_PRE static void
 usage(void) ISC_PLATFORM_NORETURN_POST;
@@ -364,7 +364,8 @@ main(int argc, char **argv) {
 
 	if (use_nsec3 &&
 	    alg != DST_ALG_NSEC3DSA && alg != DST_ALG_NSEC3RSASHA1 &&
-	    alg != DST_ALG_RSASHA256 && alg != DST_ALG_RSASHA512) {
+	    alg != DST_ALG_RSASHA256 && alg != DST_ALG_RSASHA512 &&
+	    alg != DST_ALG_ECCGOST) {
 		fatal("%s is incompatible with NSEC3; "
 		      "do not use the -3 option", algname);
 	}
@@ -517,6 +518,9 @@ main(int argc, char **argv) {
 	{
 		isc_buffer_clear(&buf);
 		ret = dst_key_buildfilename(key, 0, directory, &buf);
+		if (ret != ISC_R_SUCCESS)
+			fatal("dst_key_buildfilename returned: %s\n",
+			      isc_result_totext(ret));
 		if (exact)
 			fatal("%s: %s already exists\n", program, filename);
 
@@ -541,6 +545,9 @@ main(int argc, char **argv) {
 
 	isc_buffer_clear(&buf);
 	ret = dst_key_buildfilename(key, 0, NULL, &buf);
+	if (ret != ISC_R_SUCCESS)
+		fatal("dst_key_buildfilename returned: %s\n",
+		      isc_result_totext(ret));
 	printf("%s\n", filename);
 	dst_key_free(&key);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2009  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2011  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1998-2003  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: rcode.c,v 1.12 2009/10/22 02:21:30 each Exp $ */
+/* $Id: rcode.c,v 1.16.14.2 2011-02-28 01:20:02 tbox Exp $ */
 
 #include <config.h>
 #include <ctype.h>
@@ -107,6 +107,7 @@
 	{ DNS_KEYALG_NSEC3RSASHA1, "NSEC3RSASHA1", 0 }, \
 	{ DNS_KEYALG_RSASHA256, "RSASHA256", 0 }, \
 	{ DNS_KEYALG_RSASHA512, "RSASHA512", 0 }, \
+	{ DNS_KEYALG_ECCGOST, "ECCGOST", 0 }, \
 	{ DNS_KEYALG_INDIRECT, "INDIRECT", 0 }, \
 	{ DNS_KEYALG_PRIVATEDNS, "PRIVATEDNS", 0 }, \
 	{ DNS_KEYALG_PRIVATEOID, "PRIVATEOID", 0 }, \
@@ -493,6 +494,9 @@ dns_rdataclass_format(dns_rdataclass_t rdclass,
 	isc_result_t result;
 	isc_buffer_t buf;
 
+	if (size == 0U)
+		return;
+
 	isc_buffer_init(&buf, array, size);
 	result = dns_rdataclass_totext(rdclass, &buf);
 	/*
@@ -504,8 +508,6 @@ dns_rdataclass_format(dns_rdataclass_t rdclass,
 		else
 			result = ISC_R_NOSPACE;
 	}
-	if (result != ISC_R_SUCCESS) {
-		snprintf(array, size, "<unknown>");
-		array[size - 1] = '\0';
-	}
+	if (result != ISC_R_SUCCESS)
+		strlcpy(array, "<unknown>", size);
 }
