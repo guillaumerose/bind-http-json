@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2007, 2009, 2010  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2004-2007, 2009-2011  Internet Systems Consortium, Inc. ("ISC")
  * Copyright (C) 1999-2002  Internet Software Consortium.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: named-checkconf.c,v 1.51.4.2 2010/03/09 23:49:55 tbox Exp $ */
+/* $Id: named-checkconf.c,v 1.54.62.2 2011-03-12 04:59:13 tbox Exp $ */
 
 /*! \file */
 
@@ -190,7 +190,7 @@ configure_zone(const char *vclass, const char *view,
 		if (obj != NULL)
 			maps[i++] = obj;
 	}
-	maps[i++] = NULL;
+	maps[i] = NULL;
 
 	cfg_map_get(zoptions, "type", &typeobj);
 	if (typeobj == NULL)
@@ -488,6 +488,10 @@ main(int argc, char **argv) {
 	if (conffile == NULL || conffile[0] == '\0')
 		conffile = NAMED_CONFFILE;
 
+#ifdef _WIN32
+	InitSockets();
+#endif
+
 	RUNTIME_CHECK(isc_mem_create(0, 0, &mctx) == ISC_R_SUCCESS);
 
 	RUNTIME_CHECK(setup_logging(mctx, stdout, &logc) == ISC_R_SUCCESS);
@@ -530,6 +534,10 @@ main(int argc, char **argv) {
 	isc_entropy_detach(&ectx);
 
 	isc_mem_destroy(&mctx);
+
+#ifdef _WIN32
+	DestroySockets();
+#endif
 
 	return (exit_status);
 }
