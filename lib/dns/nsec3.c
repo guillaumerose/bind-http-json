@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2008-2010  Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (C) 2006, 2008-2011  Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,7 +14,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: nsec3.c,v 1.13.6.5 2010/06/02 00:41:34 marka Exp $ */
+/* $Id: nsec3.c,v 1.19.24.3 2011-06-08 23:02:42 each Exp $ */
 
 #include <config.h>
 
@@ -557,7 +557,7 @@ dns_nsec3_addnsec3(dns_db_t *db, dns_dbversion_t *version,
 	dns_rdata_t rdata = DNS_RDATA_INIT;
 	dns_rdataset_t rdataset;
 	int pass;
-	isc_boolean_t exists;
+	isc_boolean_t exists = ISC_FALSE;
 	isc_boolean_t maybe_remove_unsecure = ISC_FALSE;
 	isc_uint8_t flags;
 	isc_buffer_t buffer;
@@ -1143,6 +1143,7 @@ dns_nsec3param_deletechains(dns_db_t *db, dns_dbversion_t *ver,
 		CHECK(do_one_tuple(&tuple, db, ver, diff));
 		INSIST(tuple == NULL);
 
+		rdata.data = buf;
 		buf[2] = DNS_NSEC3FLAG_REMOVE | DNS_NSEC3FLAG_NONSEC;
 
 		CHECK(rr_exists(db, ver, origin, &rdata, &flag));
@@ -1578,7 +1579,7 @@ dns_nsec3_delnsec3s(dns_db_t *db, dns_dbversion_t *version, dns_name_t *name,
 
 isc_result_t
 dns_nsec3_delnsec3sx(dns_db_t *db, dns_dbversion_t *version, dns_name_t *name,
-		     dns_rdatatype_t type, dns_diff_t *diff)
+		     dns_rdatatype_t privatetype, dns_diff_t *diff)
 {
 	dns_dbnode_t *node = NULL;
 	dns_rdata_nsec3param_t nsec3param;
@@ -1623,9 +1624,9 @@ dns_nsec3_delnsec3sx(dns_db_t *db, dns_dbversion_t *version, dns_name_t *name,
 	dns_rdataset_disassociate(&rdataset);
 
  try_private:
-	if (type == 0)
+	if (privatetype == 0)
 		goto success;
-	result = dns_db_findrdataset(db, node, version, type, 0, 0,
+	result = dns_db_findrdataset(db, node, version, privatetype, 0, 0,
 				     &rdataset, NULL);
 	if (result == ISC_R_NOTFOUND)
 		goto success;
@@ -1680,7 +1681,7 @@ dns_nsec3_active(dns_db_t *db, dns_dbversion_t *version,
 
 isc_result_t
 dns_nsec3_activex(dns_db_t *db, dns_dbversion_t *version,
-		  isc_boolean_t complete, dns_rdatatype_t type,
+		  isc_boolean_t complete, dns_rdatatype_t privatetype,
 		  isc_boolean_t *answer)
 {
 	dns_dbnode_t *node = NULL;
@@ -1729,11 +1730,11 @@ dns_nsec3_activex(dns_db_t *db, dns_dbversion_t *version,
 		*answer = ISC_FALSE;
 
  try_private:
-	if (type == 0 || complete) {
+	if (privatetype == 0 || complete) {
 		*answer = ISC_FALSE;
 		return (ISC_R_SUCCESS);
 	}
-	result = dns_db_findrdataset(db, node, version, type, 0, 0,
+	result = dns_db_findrdataset(db, node, version, privatetype, 0, 0,
 				     &rdataset, NULL);
 
 	dns_db_detachnode(db, &node);
